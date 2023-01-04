@@ -31,48 +31,6 @@ include_once('include/caldav-client-v2.php');
 if(PHP_SAPI != 'cli' and $config['autopre']) echo '<pre>' ."\n"; // asuming a browser will show output
 $log->trace('PHP version ' . phpversion());
 
-$cdc = new CalDAVClient($config['CalDAV']['url'], $config['CalDAV']['username'], $config['CalDAV']['password']);
-
-$log->trace('Probing CalDAV URL ' . $config['CalDAV']['url']);
-if (preg_match('/HTTP\/\d\.\d (\d{3})/', $cdc->DoRequest($config['CalDAV']['url']), $status))
-{
-    switch (intval($status[1])) {
-        case 401:
-            $log->error('Username and/or password you provided is wrong. Can\'t access CalDAV URL');
-            exit();
-        case 404:
-            $log->error('Calendar URL not found. Please make sure that your calendar URL is correct - did you use correct calendar ID?');
-            exit();
-    }
-}
-
-$log->trace('Connecting to CalDAV server and fetching info');
-$cdc->SetDebug($config['loglevel'] < MyLogger::DEBUG);
-$details = $cdc->GetCalendarDetails();
-$log->debug('Calendar info - displayname: ' . $details->displayname);
-$log->debug('Calendar info - getctag: ' . $details->getctag);
-
-$cdc->SetDepth( $depth = '1');
-$events = $cdc->GetEvents();
-
-$log->debug('Found ' . count($events) . ' events in CalDAV calendar');
-// delete all events in this calendar
-
-$all_events = array();
-
-// read in all events and set for deletion
-foreach($events as $event)
-{
-    $vevent = VObject\Reader::read($event['data'], VObject\Reader::OPTION_FORGIVING)->VEVENT;
-    $hash = vevent_hash($vevent);
-
-    $all_events[$hash]['type'] = DELETE; // set as default - KEEP will be set later
-    $all_events[$hash]['url'] = $details->url . $event['href'];
-    $all_events[$hash]['vevent'] = $vevent;
-}
-
-unset($events);
-
 // https://stackoverflow.com/questions/4356289/php-random-string-generator/31107425#31107425
 /**
  * Generate a random string, using a cryptographically secure
@@ -96,11 +54,59 @@ function random_str($length, $keyspace = '0123456789abcdefghijklmnopqrstuvwxyzAB
     return implode('', $pieces);
 }
 
+function import_calendar($config, $log) {
+$cdc = new CalDAVClient($config['CalDAV']['url'], $config['CalDAV']['username'], $config['CalDAV']['password']);
+
+$log->trace('Probing CalDAV URL ' . $config['CalDAV']['url']);
+if (preg_match('/HTTP\/\d\.\d (\d{3})/', $cdc->DoRequest($config['CalDAV']['url']), $status))
+{
+    switch (intval($status[1])) {
+        case 401:
+            $log->error('Username and/or password you provided is wrong. Can\'t access CalDAV URL');
+            exit();
+        case 404:
+            $log->error('Calendar URL not found. Please make sure that your calendar URL is correct - did you use correct calendar ID?');
+            exit();
+    }
+}
+
+$log->trace('Connecting to CalDAV server and fetching info');
+$cdc->SetDebug($config['loglevel'] < MyLogger::DEBUG);
+$details = $cdc->GetCalendarDetails();
+$log->info('Calendar info - displayname: ' . $details->displayname);
+$log->debug('Calendar info - getctag: ' . $details->getctag);
+
+$cdc->SetDepth( $depth = '1');
+$events = $cdc->GetEvents();
+
+$log->debug('Found ' . count($events) . ' events in CalDAV calendar');
+// delete all events in this calendar
+
+$all_events = array();
+
+// read in all events and set for deletion
+foreach($events as $event)
+{
+    $vevent = VObject\Reader::read($event['data'], VObject\Reader::OPTION_FORGIVING)->VEVENT;
+    $hash = vevent_hash($vevent);
+
+    $all_events[$hash]['type'] = DELETE; // set as default - KEEP will be set later
+    $all_events[$hash]['url'] = $details->url . $event['href'];
+    $all_events[$hash]['vevent'] = $vevent;
+}
+
+unset($events);
+
+$events = array();
+if(!is_array($config['ICS']['url'])) {
+    $config['ICS']['url'] = array($config['ICS']['url']);
+}
+foreach($config['ICS']['url'] as $ics_url) {
 // read in ics file to calendar
-$log->trace('Reading ICS file from ' . $config['ICS']['url']);
+$log->trace('Reading ICS file from ' . $ics_url);
 try
 {
-    $vcalendar = VObject\Reader::read(fopen($config['ICS']['url'], 'r'), VObject\Reader::OPTION_FORGIVING);
+    $vcalendar = VObject\Reader::read(fopen($ics_url, 'r'), VObject\Reader::OPTION_FORGIVING);
 }
 catch (Exception $e)
 {
@@ -110,9 +116,12 @@ catch (Exception $e)
 }
 
 $log->debug('Found ' . count($vcalendar->VEVENT) . ' events in ICS file');
+foreach($vcalendar->VEVENT as $event) { $events[] = $event; }
+unset($vcalendar);
+}
 
 // decide on which events to write to calendar
-foreach($vcalendar->VEVENT as $event)
+foreach($events as $event)
 {
     $hash = vevent_hash($event);
 
@@ -127,8 +136,6 @@ foreach($vcalendar->VEVENT as $event)
         $all_events[$hash]['vevent'] = $event;
     }
 }
-
-unset($vcalendar);
 
 $stats[DELETE] = count(array_filter($all_events, function($v) { return $v['type'] == DELETE; }));
 $stats[KEEP]   = count(array_filter($all_events, function($v) { return $v['type'] == KEEP;   }));
@@ -155,6 +162,7 @@ $log->info("Deleted " .     $stats[DELETE] . " events");
 $log->info("Not touched " . $stats[KEEP]   . " events");
 $log->info("Created " .     $stats[CREATE] . " events");
 $log->debug("Script ran " . (time() - TIME_START) . " seconds");
+}
 if(PHP_SAPI != 'cli' and $config['autopre']) echo '</pre>' ."\n";
 
 ?>
