@@ -6,10 +6,15 @@ Import a ``*.ics`` file (provided with WebDAV) into a CalDAV server as calendar 
 
 * copy files to destination folder
 * run [Composer](https://getcomposer.org/)
+  * e.g. ``docker run -it --rm -v `pwd`:/app composer install --ignore-platform-reqs``
 * in ``config`` directory
   * rename ``config.sample.inc.php`` to ``config.inc.php`` and adjust according to your needs. Everything in ``$config`` is mandadtory (examples are based on a Nextcloud server, having calendar to update and ``*.ics`` file in same account)
   * maybe set ``$config['loglevel']`` (line 40) to the level of your desire
-* call ``https://example.com/calendar_import.php`` and wait for response
+
+* call ``https://example.com/ics2caldav.php`` or ``php ics2caldav.php`` and wait for response
+* to use docker:
+  * built it ``docker build -t ics2caldav .``
+  * run it ``docker run -it --rm -v /path/to/config.inc.php:/ics2caldav/config/config.inc.php:ro --name ics2caldav ics2caldav``
 
 **WARNING:** Script will delete content of provided calendar and replace it with events from provided ``*.ics`` file.
 First test it on your development server, before going to production!
