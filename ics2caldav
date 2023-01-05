@@ -1,0 +1,11 @@
+#!/bin/sh
+set -e
+
+if [ ! -f "/ics2caldav/config.inc.php" ] ; then
+    echo "No ics2caldav config found!"
+    cp /srv/config/config.sample.inc.php /data/
+    echo "Copied config.sample.inc.php to /ics2caldav volume. Please edit and rename to config.inc.php"
+    exit 1
+fi
+cd /srv
+php ./ics2caldav.php
